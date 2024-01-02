@@ -1,7 +1,10 @@
+import os
 from tkinter import messagebox
 import tkinter as tk
 import pymongo
 import pandas as pd
+from tkinter import filedialog
+import subprocess
 
 myclient = pymongo.MongoClient("mongodb://127.0.0.1:27017/")
 mydb = myclient["bookstorebase"]
@@ -21,6 +24,7 @@ def export_to_excel():
 
     # Show a message box indicating the export success
     messagebox.showinfo("Export Successful", f"Data exported to {excel_file}")
+
 def callback(event):
     li = []
     li = event.widget._values
@@ -30,17 +34,25 @@ def callback(event):
     cYear.set(lst[li[1]][3])
     cAuthor.set(lst[li[1]][4])
 
-def creategrid(n):
+def creategrid(n, search_query=None):
+    # Clear the existing grid
+    # for widget in window.grid_slaves():
+    #     if int(widget.grid_info()["row"]) > 4:
+    #         widget.grid_forget()
+
     lst.clear()
     lst.append(['Book ID', 'Title', 'Page', 'Year', 'Author'])
     cursor = mycol.find({})
+
     for data in cursor:
         bookId = str(data['bookId'])
         bookTitle = str(data['bookTitle'].encode('utf-8').decode('utf-8'))
         bookPage = str(data['bookPage'])
         bookYear = str(data['bookYear'])
         author = str(data['author'].encode('utf-8').decode('utf-8'))
-        lst.append([bookId, bookTitle, bookPage, bookYear, author])
+
+        if not search_query or search_query.lower() in bookTitle.lower() or search_query.lower() in author.lower():
+            lst.append([bookId, bookTitle, bookPage, bookYear, author])
 
     for i in range(len(lst)):
         for j in range(len(lst[0])):
@@ -55,6 +67,16 @@ def creategrid(n):
 
             if int(label.grid_info()["row"]) > 7:
                 label.grid_forget()
+
+def search_books():
+    search_query = search_entry.get().strip()
+
+    if not search_query:
+        creategrid(0)
+    else:
+        creategrid(1, search_query)
+
+
 def msg(msg,titlebar):
     result = messagebox.askokcancel(title=titlebar, message=msg)
     return result
@@ -115,6 +137,39 @@ def update():
         creategrid(1)
         creategrid(0)
 
+def import_data():
+    file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls"), ("JSON files", "*.json"), ("CSV files", "*.csv")])
+
+    if file_path:
+        try:
+            if file_path.endswith((".json", ".csv")):
+                # Handle JSON and CSV files
+                if file_path.endswith(".json"):
+                    df = pd.read_json(file_path)
+                else:  # Assuming CSV file
+                    df = pd.read_csv(file_path)
+
+                # Choose a temporary file name for the data
+                temp_file = "temp_import_data.json"
+
+                # Export the DataFrame to a temporary JSON file
+                df.to_json(temp_file, orient='records', lines=True)
+
+                # Insert the data into MongoDB using mongoimport
+                cmd = f'"C:\\Program Files\\MongoDB\\Tools\\100\\bin\\mongoimport.exe" --host 127.0.0.1:27017 --db bookstorebase --collection books --type json --file {temp_file}'
+                process = subprocess.run(cmd, shell=True, text=True)
+
+                # Remove the temporary file
+                os.remove(temp_file)
+
+                # Refresh the grid to show the imported data
+                creategrid(1)
+                creategrid(0)
+            else:
+                messagebox.showwarning("Unsupported File Type", "Unsupported file type. Please select a JSON or CSV file.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error importing data: {str(e)}")
+
 window = tk.Tk()
 window.title("Book Management System")
 window.geometry("1100x500")
@@ -166,7 +221,23 @@ deleteBtn = tk.Button(text="Delete", command=delete, width=10)
 deleteBtn.grid(column=6, row=3, columnspan=2, padx=(20, 0))
 updateBtn = tk.Button(text="Update", command=update, width=10)
 updateBtn.grid(column=6, row=4, columnspan=2, padx=(20, 0))
-exportBtn = tk.Button(text="Export to Excel", command=export_to_excel)
+
+exportBtn = tk.Button(text="Export Excel", command=export_to_excel, width=10)
 exportBtn.grid(column=6, row=5, columnspan=2, padx=(20, 0))
+
+import_button = tk.Button(text="Import", command=import_data, width=10)
+import_button.grid(column=6, row=6, columnspan=2, padx=(20, 0))
+
+search_label = tk.Label(text="Search:", width=10, bg="gray")
+search_label.grid(column=1, row=1, padx=(10, 0), pady=(10, 0))
+search_entry = tk.Entry(width=20)
+search_entry.grid(column=2, row=1, pady=(10, 0))
+
+search_button = tk.Button(text="Search", command=search_books, width=10)
+search_button.grid(column=3, row=1, padx=(0, 10), pady=(10, 0))
+
+
+
+
 
 window.mainloop()
